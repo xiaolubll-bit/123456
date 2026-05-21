@@ -52,12 +52,12 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const MAX_INBOUND_STICKER_IMAGE_BATCH = 10;
 const INBOUND_IMAGE_BATCH_IDLE_MS = 1_500;
 
-function createRuntimeAdapter(config) {
+function createRuntimeAdapter(config, options = {}) {
   if (config.runtime === "claudecode") {
     return createClaudeCodeRuntimeAdapter(config);
   }
   if (config.runtime === "openclaw") {
-    return createOpenClawRuntimeAdapter(config);
+    return createOpenClawRuntimeAdapter(config, options);
   }
   return createCodexRuntimeAdapter(config);
 }
@@ -74,7 +74,7 @@ class CyberbossApp {
     this.projectServices = projectTooling.services;
     this.projectToolHost = projectTooling.toolHost;
     this.runtimeContextStore = projectTooling.runtimeContextStore;
-    this.runtimeAdapter = createRuntimeAdapter(config);
+    this.runtimeAdapter = createRuntimeAdapter(config, { projectToolHost: projectTooling.toolHost });
     this.threadStateStore = new ThreadStateStore();
     this.systemMessageQueue = new SystemMessageQueueStore({ filePath: config.systemMessageQueueFile });
     this.deferredSystemReplyQueue = new DeferredSystemReplyStore({ filePath: config.deferredSystemReplyQueueFile });

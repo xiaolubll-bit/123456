@@ -8,16 +8,40 @@ const { URL } = require("url");
 const { SessionStore } = require("../codex/session-store");
 const { buildOpeningTurnText, buildInstructionRefreshText } = require("../shared-instructions");
 
-function createOpenClawRuntimeAdapter(config) {
+const MAX_TOOL_ROUNDS = 10;
+
+function createOpenClawRuntimeAdapter(config, options = {}) {
   const stateDir = config.stateDir || path.join(os.homedir(), ".cyberboss");
   const sessionStore = new SessionStore({ filePath: config.sessionsFile, runtimeId: "openclaw" });
   const openclawBaseUrl = config.openclawBaseUrl || "http://127.0.0.1:18789";
   const openclawApiKey = config.openclawApiKey || "openclaw123";
   const openclawModel = config.openclawModel || "openclaw/default";
   const conversationsFile = path.join(stateDir, "openclaw-conversations.json");
+  const projectToolHost = options.projectToolHost || null;
 
   let globalListener = null;
   const activeControllers = new Map();
+
+  // Build OpenAI-format tool specs from ProjectToolHost once
+  let cachedToolSpecs = null;
+  function getToolSpecs() {
+    if (!projectToolHost) return [];
+    if (!cachedToolSpecs) {
+      try {
+        cachedToolSpecs = projectToolHost.listTools().map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description || tool.name,
+            parameters: tool.inputSchema || { type: "object", properties: {} },
+          },
+        }));
+      } catch {
+        cachedToolSpecs = [];
+      }
+    }
+    return cachedToolSpecs;
+  }
 
   function emitEvent(event) {
     if (globalListener && event) {
@@ -59,9 +83,13 @@ function createOpenClawRuntimeAdapter(config) {
     saveConversations(all);
   }
 
-  function callCompletions(messages, signal) {
+  function callCompletions(messages, signal, tools) {
     const url = new URL("/v1/chat/completions", openclawBaseUrl);
-    const body = JSON.stringify({ model: openclawModel, messages });
+    const payload = { model: openclawModel, messages };
+    if (Array.isArray(tools) && tools.length > 0) {
+      payload.tools = tools;
+    }
+    const body = JSON.stringify(payload);
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
 
@@ -110,7 +138,82 @@ function createOpenClawRuntimeAdapter(config) {
     });
   }
 
-  function runTurnAsync({ threadId, turnId, outboundText }) {
+  // Execute one tool call, return { tool_call_id, content }
+  async function executeTool(toolCall, toolContext) {
+    const toolName = toolCall?.function?.name || "";
+    let toolArgs = {};
+    try {
+      toolArgs = JSON.parse(toolCall?.function?.arguments || "{}");
+    } catch {}
+
+    try {
+      const result = await projectToolHost.invokeTool(toolName, toolArgs, toolContext);
+      return {
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: typeof result === "string" ? result : JSON.stringify(result),
+      };
+    } catch (err) {
+      return {
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      };
+    }
+  }
+
+  // Run a full completion + tool-call loop, returns { text, usage }
+  async function runCompletionLoop(messages, signal, toolContext) {
+    const tools = getToolSpecs();
+    let usage = {};
+    let round = 0;
+
+    while (round < MAX_TOOL_ROUNDS) {
+      round++;
+      const response = await callCompletions(messages, signal, tools);
+      const choice = response?.choices?.[0];
+      const assistantMsg = choice?.message;
+
+      if (!assistantMsg) {
+        throw new Error("Empty response from OpenClaw");
+      }
+
+      // Accumulate usage from last round
+      if (response?.usage) {
+        usage = response.usage;
+      }
+
+      const toolCalls = Array.isArray(assistantMsg.tool_calls) ? assistantMsg.tool_calls : [];
+
+      if (toolCalls.length > 0 && projectToolHost) {
+        // Store assistant message with tool_calls (content may be null)
+        messages.push({
+          role: "assistant",
+          content: assistantMsg.content ?? null,
+          tool_calls: toolCalls,
+        });
+
+        // Execute all tool calls in parallel
+        const toolResults = await Promise.all(
+          toolCalls.map((tc) => executeTool(tc, toolContext)),
+        );
+        for (const result of toolResults) {
+          messages.push(result);
+        }
+        // Loop back to get next response
+        continue;
+      }
+
+      // No tool calls — final assistant text
+      const text = typeof assistantMsg.content === "string" ? assistantMsg.content : "";
+      messages.push({ role: "assistant", content: text });
+      return { text, usage };
+    }
+
+    throw new Error("Tool call loop exceeded maximum rounds");
+  }
+
+  function runTurnAsync({ threadId, turnId, outboundText, toolContext }) {
     setImmediate(async () => {
       emitEvent({ type: "runtime.turn.started", payload: { threadId, turnId } });
 
@@ -121,11 +224,12 @@ function createOpenClawRuntimeAdapter(config) {
         const messages = getMessages(threadId);
         messages.push({ role: "user", content: outboundText });
 
-        const response = await callCompletions(messages, controller.signal);
-        const assistantText = response?.choices?.[0]?.message?.content || "";
-        const usage = response?.usage || {};
+        const { text: assistantText, usage } = await runCompletionLoop(
+          messages,
+          controller.signal,
+          toolContext,
+        );
 
-        messages.push({ role: "assistant", content: assistantText });
         setMessages(threadId, messages);
 
         emitEvent({
@@ -173,6 +277,7 @@ function createOpenClawRuntimeAdapter(config) {
         kind: "runtime",
         baseUrl: openclawBaseUrl,
         model: openclawModel,
+        tools: getToolSpecs().length,
         sessionsFile: config.sessionsFile,
       };
     },
@@ -198,7 +303,12 @@ function createOpenClawRuntimeAdapter(config) {
     },
 
     async initialize() {
-      return { baseUrl: openclawBaseUrl, model: openclawModel, models: [] };
+      return {
+        baseUrl: openclawBaseUrl,
+        model: openclawModel,
+        tools: getToolSpecs().length,
+        models: [],
+      };
     },
 
     async close() {
@@ -224,10 +334,11 @@ function createOpenClawRuntimeAdapter(config) {
     },
 
     async cancelTurn({ threadId }) {
-      const controller = activeControllers.get(String(threadId || "").trim());
+      const normalized = String(threadId || "").trim();
+      const controller = activeControllers.get(normalized);
       if (controller) {
         controller.abort();
-        activeControllers.delete(String(threadId || "").trim());
+        activeControllers.delete(normalized);
       }
       return { threadId };
     },
@@ -252,9 +363,8 @@ function createOpenClawRuntimeAdapter(config) {
       ];
 
       const turnId = crypto.randomUUID();
-
       try {
-        const response = await callCompletions(summaryMessages);
+        const response = await callCompletions(summaryMessages, null, []);
         const summary = response?.choices?.[0]?.message?.content || "";
         if (summary) {
           setMessages(threadId, [
@@ -274,12 +384,11 @@ function createOpenClawRuntimeAdapter(config) {
     async refreshThreadInstructions({ threadId }) {
       const refreshText = buildInstructionRefreshText(config);
       const turnId = crypto.randomUUID();
-
       const messages = getMessages(threadId);
       messages.push({ role: "user", content: refreshText });
 
       try {
-        const response = await callCompletions(messages);
+        const response = await callCompletions(messages, null, []);
         const assistantText = response?.choices?.[0]?.message?.content || "";
         messages.push({ role: "assistant", content: assistantText });
         setMessages(threadId, messages);
@@ -295,7 +404,11 @@ function createOpenClawRuntimeAdapter(config) {
       } catch (error) {
         emitEvent({
           type: "runtime.turn.failed",
-          payload: { threadId, turnId, text: `❌ Refresh failed: ${error instanceof Error ? error.message : String(error)}` },
+          payload: {
+            threadId,
+            turnId,
+            text: `❌ Refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
         });
       }
 
@@ -315,8 +428,16 @@ function createOpenClawRuntimeAdapter(config) {
       sessionStore.setThreadIdForWorkspace(bindingKey, workspaceRoot, threadId, metadata);
 
       const outboundText = isNewThread ? buildOpeningTurnText(config, text) : text;
-      runTurnAsync({ threadId, turnId, outboundText });
+      const toolContext = {
+        runtimeId: "openclaw",
+        threadId,
+        bindingKey,
+        workspaceRoot,
+        accountId: metadata?.accountId || "",
+        senderId: metadata?.senderId || "",
+      };
 
+      runTurnAsync({ threadId, turnId, outboundText, toolContext });
       return { threadId, turnId };
     },
   };
