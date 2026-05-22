@@ -219,6 +219,10 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
 
       // No tool calls — final assistant text
       const text = typeof assistantMsg.content === "string" ? assistantMsg.content : "";
+      // Detect DeepSeek error messages returned as normal content (200 OK but error text)
+      if (/^(请稍后再试|服务(暂时)?不可用|系统繁忙|请求(太频繁|超时)|The server is|rate limit|Service Unavailable)/i.test(text.trim())) {
+        throw new Error(`DeepSeek returned error as content: ${text.trim()}`);
+      }
       messages.push({ role: "assistant", content: text });
       return { text, usage };
     }
