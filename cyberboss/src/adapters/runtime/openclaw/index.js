@@ -110,11 +110,24 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
           let data = "";
           res.on("data", (chunk) => { data += chunk; });
           res.on("end", () => {
+            let parsed;
             try {
-              resolve(JSON.parse(data));
+              parsed = JSON.parse(data);
             } catch (err) {
               reject(new Error(`OpenClaw response parse error: ${err.message} — body: ${data.slice(0, 200)}`));
+              return;
             }
+            // Surface API-level errors as thrown errors rather than passing through as AI text
+            if (parsed?.error) {
+              const msg = parsed.error?.message || parsed.error?.code || JSON.stringify(parsed.error);
+              reject(new Error(`OpenClaw API error: ${msg}`));
+              return;
+            }
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`OpenClaw HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+              return;
+            }
+            resolve(parsed);
           });
         },
       );
