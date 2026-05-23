@@ -175,6 +175,30 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
     }
   }
 
+  const TRANSIENT_ERROR_RE = /^(请稍后再试|服务(暂时)?不可用|系统繁忙|请求(太频繁|超时)|The server is|rate.?limit|Service Unavailable)/i;
+
+  async function callCompletionsWithRetry(messages, signal, tools) {
+    const MAX_RETRIES = 2;
+    let lastErr;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) throw new Error("Turn cancelled");
+      try {
+        const response = await callCompletions(messages, signal, tools);
+        const content = response?.choices?.[0]?.message?.content;
+        if (typeof content === "string" && TRANSIENT_ERROR_RE.test(content.trim())) {
+          throw new Error(`DeepSeek transient error: ${content.trim()}`);
+        }
+        return response;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_RETRIES && !signal?.aborted) {
+          await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
   // Run a full completion + tool-call loop, returns { text, usage }
   async function runCompletionLoop(messages, signal, toolContext) {
     const tools = getToolSpecs();
@@ -183,7 +207,7 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
 
     while (round < MAX_TOOL_ROUNDS) {
       round++;
-      const response = await callCompletions(messages, signal, tools);
+      const response = await callCompletionsWithRetry(messages, signal, tools);
       const choice = response?.choices?.[0];
       const assistantMsg = choice?.message;
 
@@ -219,10 +243,6 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
 
       // No tool calls — final assistant text
       const text = typeof assistantMsg.content === "string" ? assistantMsg.content : "";
-      // Detect DeepSeek error messages returned as normal content (200 OK but error text)
-      if (/^(请稍后再试|服务(暂时)?不可用|系统繁忙|请求(太频繁|超时)|The server is|rate limit|Service Unavailable)/i.test(text.trim())) {
-        throw new Error(`DeepSeek returned error as content: ${text.trim()}`);
-      }
       messages.push({ role: "assistant", content: text });
       return { text, usage };
     }
