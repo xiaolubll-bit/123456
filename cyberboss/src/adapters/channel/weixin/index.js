@@ -80,7 +80,10 @@ function createWeixinChannelAdapter(config) {
       );
     return sendChunks.reduce((promise, chunk, index) => promise
       .then(() => {
-        const deliveryChunk = finalizeWeixinDeliveryChunk(chunk) || "Completed.";
+        const baseChunk = finalizeWeixinDeliveryChunk(chunk) || "Completed.";
+        const deliveryChunk = sendChunks.length > 1
+          ? `(${index + 1}/${sendChunks.length})\n${baseChunk}`
+          : baseChunk;
         return sendText({
           baseUrl: account.baseUrl,
           token: account.token,

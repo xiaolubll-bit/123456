@@ -30,7 +30,9 @@ class DeferredSystemReplyStore {
   }
 
   save() {
-    fs.writeFileSync(this.filePath, JSON.stringify(this.state, null, 2));
+    const tmp = this.filePath + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
+    fs.renameSync(tmp, this.filePath);
   }
 
   enqueue(reply) {

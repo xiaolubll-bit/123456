@@ -1,6 +1,7 @@
 const { sanitizeProtocolLeakText } = require("../adapters/runtime/codex/protocol-leak-monitor");
 
 const CURRENT_REPLY_HEADER = "===== 本轮模型回复 =====";
+const STALE_RUN_TTL_MS = 30 * 60 * 1_000;
 
 class StreamDelivery {
   constructor({ channelAdapter, sessionStore, onDeferredSystemReply, systemReplyRetryScheduleMs, sameTokenRetryDelayMs }) {
@@ -156,6 +157,7 @@ class StreamDelivery {
       return existing;
     }
 
+    this.purgeStaleRunStates();
     const created = {
       runKey,
       threadId,
@@ -170,6 +172,7 @@ class StreamDelivery {
       flushPromise: null,
       sequence: this.runSequence += 1,
       threadReplyTargetAttached: false,
+      createdAt: Date.now(),
     };
     this.stateByRunKey.set(runKey, created);
     this.attachReplyTarget(created);
@@ -492,6 +495,16 @@ class StreamDelivery {
     }
     this.replyTargetByTurnKey.delete(normalizedRunKey);
     this.stateByRunKey.delete(normalizedRunKey);
+  }
+
+  purgeStaleRunStates() {
+    const cutoff = Date.now() - STALE_RUN_TTL_MS;
+    for (const [runKey, state] of this.stateByRunKey) {
+      if (state.createdAt < cutoff) {
+        this.replyTargetByTurnKey.delete(runKey);
+        this.stateByRunKey.delete(runKey);
+      }
+    }
   }
 
   bindQueuedReplyTargetsToActiveThreadRuns(threadId) {

@@ -25,7 +25,9 @@ function loadSyncBuffer(config, accountId) {
 
 function saveSyncBuffer(config, accountId, buffer) {
   const filePath = resolveSyncBufferPath(config, accountId);
-  fs.writeFileSync(filePath, String(buffer || ""), "utf8");
+  const tmp = filePath + ".tmp";
+  fs.writeFileSync(tmp, String(buffer || ""), "utf8");
+  fs.renameSync(tmp, filePath);
 }
 
 module.exports = {

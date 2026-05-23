@@ -39,7 +39,9 @@ function savePersistedContextTokens(config, accountId, tokens) {
       .map(([userId, token]) => [userId.trim(), token.trim()])
   );
   const filePath = resolveContextTokenPath(config, accountId);
-  fs.writeFileSync(filePath, JSON.stringify(normalizedTokens, null, 2), "utf8");
+  const tmp = filePath + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(normalizedTokens, null, 2), "utf8");
+  fs.renameSync(tmp, filePath);
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {
