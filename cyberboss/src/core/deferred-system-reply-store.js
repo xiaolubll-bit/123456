@@ -26,6 +26,7 @@ class DeferredSystemReplyStore {
       };
     } catch {
       this.state = { replies: [] };
+      this.save();
     }
   }
 
