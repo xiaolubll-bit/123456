@@ -62,7 +62,9 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
   function saveConversations(conversations) {
     try {
       fs.mkdirSync(path.dirname(conversationsFile), { recursive: true });
-      fs.writeFileSync(conversationsFile, JSON.stringify(conversations, null, 2), "utf8");
+      const tmp = conversationsFile + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(conversations, null, 2), "utf8");
+      fs.renameSync(tmp, conversationsFile);
     } catch {}
   }
 
@@ -405,7 +407,7 @@ function createOpenClawRuntimeAdapter(config, options = {}) {
         const summary = response?.choices?.[0]?.message?.content || "";
         if (summary) {
           setMessages(threadId, [
-            { role: "user", content: "[Previous conversation summary]" },
+            { role: "user", content: buildOpeningTurnText(config, "[Previous conversation summary]") },
             { role: "assistant", content: summary },
           ]);
         }
