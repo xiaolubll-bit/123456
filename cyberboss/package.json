@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "A personal agent bridge core for life operations.",
   "license": "AGPL-3.0-only",
-  "private": false,
+  "private": true,
   "type": "commonjs",
   "main": "src/index.js",
   "bin": {
