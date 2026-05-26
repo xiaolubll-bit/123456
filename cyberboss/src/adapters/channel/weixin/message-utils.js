@@ -28,6 +28,11 @@ function createInboundFilter() {
         return null;
       }
 
+      const allowedUserIds = Array.isArray(config?.allowedUserIds) ? config.allowedUserIds : [];
+      if (allowedUserIds.length > 0 && !allowedUserIds.includes(senderId)) {
+        return null;
+      }
+
       const createdAtMs = normalizeMessageTimestampMs(message);
 
       const dedupKey = buildDedupKey(message, senderId, createdAtMs);
