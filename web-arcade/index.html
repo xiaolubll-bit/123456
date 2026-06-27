@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 Claude Arcade</title>
+<style>
+  :root{
+    --bg:#1a1410; --panel:#241c16; --gold:#e0b050; --green:#2e7d4f;
+    --red:#c0392b; --black:#1c1c1c; --text:#f0e6d8; --dim:#a08868;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:radial-gradient(circle at 50% -10%, #2a2018, var(--bg));
+    color:var(--text); font-family:"PingFang SC","Microsoft YaHei",sans-serif; padding:16px;
+  }
+  h1{text-align:center; margin:8px 0 4px; color:var(--gold); letter-spacing:2px; font-size:1.6em;}
+  .sub{text-align:center; color:var(--dim); margin-bottom:16px; font-size:0.9em;}
+  .wallet{
+    display:flex; justify-content:center; gap:24px; flex-wrap:wrap; margin-bottom:16px;
+    background:var(--panel); border:1px solid #3a2e22; border-radius:12px; padding:12px; max-width:680px;
+    margin-left:auto; margin-right:auto;
+  }
+  .wallet div{text-align:center;}
+  .wallet .v{font-size:1.4em; font-weight:bold; color:var(--gold);}
+  .wallet .l{font-size:0.75em; color:var(--dim);}
+  .buyrow{display:flex; justify-content:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  button{
+    background:linear-gradient(180deg,#3a2e1f,#2a2015); color:var(--text); border:1px solid #4a3c28;
+    border-radius:8px; padding:8px 14px; cursor:pointer; font-size:0.95em; transition:transform .08s;
+  }
+  button:hover{border-color:var(--gold);}
+  button:active{transform:scale(0.96);}
+  button.primary{background:linear-gradient(180deg,#caa14a,#a8822f); color:#241c16; font-weight:bold; border:none;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  .tabs{display:flex; justify-content:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  .tabs button.active{background:var(--gold); color:#241c16; font-weight:bold;}
+  .game{
+    max-width:680px; margin:0 auto; background:var(--panel); border:1px solid #3a2e22; border-radius:14px;
+    padding:20px; display:none;
+  }
+  .game.active{display:block;}
+  .row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; margin:10px 0;}
+  input[type=number]{
+    width:90px; background:#15100c; border:1px solid #4a3c28; color:var(--text); border-radius:6px;
+    padding:6px 8px; font-size:1em;
+  }
+  .log{
+    background:#15100c; border-radius:8px; padding:10px 14px; min-height:48px; font-size:0.95em;
+    line-height:1.6; white-space:pre-wrap; margin-top:10px;
+  }
+  /* slots */
+  .reels{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; max-width:280px; margin:12px auto;}
+  .reels div{
+    background:#15100c; border:2px solid #4a3c28; border-radius:8px; font-size:2em; text-align:center;
+    padding:10px 0;
+  }
+  .reels div.mid{border-color:var(--gold);}
+  /* blackjack */
+  .table{background:#16382a; border-radius:10px; padding:16px; text-align:center;}
+  .hand-label{color:var(--dim); font-size:0.85em; margin-bottom:4px;}
+  .cards{font-size:1.6em; margin-bottom:14px; letter-spacing:4px;}
+  .val{color:var(--gold); font-size:0.9em;}
+  /* roulette */
+  .betgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:12px 0;}
+  .betgrid button{padding:10px 4px;}
+  .numwheel{font-size:2.2em; text-align:center; margin:14px 0;}
+  .achlist{font-size:0.8em; color:var(--dim); margin-top:10px; text-align:center;}
+</style>
+</head>
+<body>
+<h1>🎰 CLAUDE ARCADE</h1>
+<div class="sub">老虎机 · 21点 · 轮盘 — 橘猫看店中</div>
+
+<div class="wallet">
+  <div><div class="v" id="chipsV">0</div><div class="l">💰 筹码</div></div>
+  <div><div class="v" id="winV">0</div><div class="l">🏆 winnings</div></div>
+</div>
+<div class="buyrow">
+  <button class="primary" onclick="buy(500)">+500 买筹码</button>
+  <button onclick="buy(2000)">+2000</button>
+  <button onclick="cashoutAll()">提现全部</button>
+  <button onclick="resetGame()">重置存档</button>
+</div>
+
+<div class="tabs">
+  <button id="tab-slots" class="active" onclick="showTab('slots')">🎰 老虎机</button>
+  <button id="tab-bj" onclick="showTab('bj')">🃏 21点</button>
+  <button id="tab-rl" onclick="showTab('rl')">🎡 轮盘</button>
+</div>
+
+<!-- SLOTS -->
+<div class="game active" id="game-slots">
+  <div class="reels" id="reels">
+    <div>🍒</div><div>🍋</div><div>🍊</div>
+    <div class="mid">🍒</div><div class="mid">🍇</div><div class="mid">🔔</div>
+    <div>⭐</div><div>💎</div><div>7️⃣</div>
+  </div>
+  <div class="row">
+    <input type="number" id="slotsBet" value="20" min="1">
+    <button class="primary" onclick="slotsSpin()">拉杆</button>
+  </div>
+  <div class="log" id="slotsLog">投币准备好了吗？拉杆试试运气。</div>
+</div>
+
+<!-- BLACKJACK -->
+<div class="game" id="game-bj">
+  <div class="table">
+    <div class="hand-label">庄家</div>
+    <div class="cards" id="bjDealerCards">🂠 🂠</div>
+    <div class="val" id="bjDealerVal">&nbsp;</div>
+    <div class="hand-label">你</div>
+    <div class="cards" id="bjPlayerCards">🂠 🂠</div>
+    <div class="val" id="bjPlayerVal">&nbsp;</div>
+  </div>
+  <div class="row" id="bjBetRow">
+    <input type="number" id="bjBet" value="50" min="1">
+    <button class="primary" onclick="bjDeal()">发牌</button>
+  </div>
+  <div class="row" id="bjActRow" style="display:none">
+    <button onclick="bjHit()">要牌</button>
+    <button onclick="bjStand()">停牌</button>
+    <button onclick="bjDouble()" id="bjDoubleBtn">加倍</button>
+    <button onclick="bjSurrender()">投降</button>
+  </div>
+  <div class="log" id="bjLog">下注开始游戏。Blackjack 赔 1.5 倍，庄家 17 以下必须要牌。</div>
+</div>
+
+<!-- ROULETTE -->
+<div class="game" id="game-rl">
+  <div class="numwheel" id="rlResult">🎡</div>
+  <div class="row">
+    <input type="number" id="rlBet" value="50" min="1">
+    <input type="number" id="rlNum" placeholder="单号 0-36" min="0" max="36" style="width:110px">
+    <button onclick="rlSpin('straight')">押单号</button>
+  </div>
+  <div class="betgrid">
+    <button onclick="rlSpin('red')">🔴 红 ×1</button>
+    <button onclick="rlSpin('black')">⚫ 黑 ×1</button>
+    <button onclick="rlSpin('odd')">奇 ×1</button>
+    <button onclick="rlSpin('even')">偶 ×1</button>
+    <button onclick="rlSpin('low')">小 1-18 ×1</button>
+    <button onclick="rlSpin('high')">大 19-36 ×1</button>
+    <button onclick="rlSpin('d1')">第一打 1-12 ×2</button>
+    <button onclick="rlSpin('d2')">第二打 13-24 ×2</button>
+    <button onclick="rlSpin('d3')">第三打 25-36 ×2</button>
+  </div>
+  <div class="log" id="rlLog">选个押注方式，球就会转起来。</div>
+</div>
+
+<div class="achlist" id="achList"></div>
+
+<script>
+// ───────── 存档 ─────────
+const SAVE_KEY = "claude_arcade_save_v1";
+function loadState(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return { chips:0, winnings:0, totalBought:0, totalCashed:0, achs:[] };
+}
+let S = loadState();
+function saveState(){ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }
+function renderWallet(){
+  document.getElementById("chipsV").textContent = S.chips;
+  document.getElementById("winV").textContent = S.winnings;
+}
+function buy(n){ S.chips += n; S.totalBought += n; saveState(); renderWallet(); }
+function cashoutAll(){
+  if(S.chips<=0){ alert("没有筹码可提现。"); return; }
+  S.totalCashed += S.chips;
+  alert(`提现 ${S.chips} 筹码！`);
+  S.chips = 0; saveState(); renderWallet();
+}
+function resetGame(){
+  if(!confirm("确定重置所有存档？筹码、winnings、成就都会清空。")) return;
+  S = { chips:0, winnings:0, totalBought:0, totalCashed:0, achs:[] };
+  saveState(); renderWallet(); renderAchs();
+}
+function unlockAch(id, name){
+  if(S.achs.includes(id)) return null;
+  S.achs.push(id);
+  return `🏆 ${name}`;
+}
+function renderAchs(){
+  document.getElementById("achList").textContent = S.achs.length
+    ? `已解锁成就 ${S.achs.length} 个`
+    : "";
+}
+
+// ───────── tabs ─────────
+function showTab(name){
+  ["slots","bj","rl"].forEach(t=>{
+    document.getElementById("game-"+t).classList.toggle("active", t===name);
+    document.getElementById("tab-"+t).classList.toggle("active", t===name);
+  });
+}
+
+function needChips(bet){
+  if(!bet || bet<=0){ alert("下注金额要大于 0。"); return false; }
+  if(bet > S.chips){ alert("筹码不够，先买点筹码。"); return false; }
+  return true;
+}
+function addWin(net){
+  // net 净赢（已扣除本金）；只有净赢 > 0 才计入 winnings
+  if(net > 0) S.winnings += net;
+}
+
+// ───────── 老虎机 ─────────
+const SYMS = [
+  {id:"cherry",  e:"🍒", w:25, pay:5},
+  {id:"lemon",   e:"🍋", w:22, pay:8},
+  {id:"orange",  e:"🍊", w:18, pay:12},
+  {id:"grape",   e:"🍇", w:14, pay:18},
+  {id:"bell",    e:"🔔", w:10, pay:25},
+  {id:"star",    e:"⭐", w:6,  pay:40},
+  {id:"diamond", e:"💎", w:3,  pay:75},
+  {id:"seven",   e:"7️⃣", w:1,  pay:200},
+  {id:"wild",    e:"🃏", w:2,  pay:50},
+];
+function weightedPick(){
+  const total = SYMS.reduce((a,s)=>a+s.w,0);
+  let r = Math.random()*total;
+  for(const s of SYMS){ r -= s.w; if(r<0) return s; }
+  return SYMS[0];
+}
+function evalLine(line){
+  const wilds = line.filter(s=>s.id==="wild").length;
+  const nonW = line.filter(s=>s.id!=="wild");
+  if(wilds===3) return {mul:50, text:"🃏🃏🃏 百搭三连！"};
+  if(wilds===2){
+    const b = nonW[0]; const m = Math.max(Math.floor(b.pay/2),3);
+    return {mul:m, text:`${b.e}🃏🃏 ${b.id}+双百搭`};
+  }
+  if(wilds===1){
+    if(nonW[0].id===nonW[1].id){
+      const b = nonW[0]; const m = Math.max(Math.floor(b.pay/2),3);
+      return {mul:m, text:`${b.e}${b.e}🃏 两连+百搭`};
+    }
+    return {mul:0, text:null};
+  }
+  if(line[0].id===line[1].id && line[1].id===line[2].id){
+    return {mul:line[0].pay, text:`${line[0].e}${line[0].e}${line[0].e} 三连！`};
+  }
+  // 对子返本
+  const ids = line.map(s=>s.id);
+  for(const s of line){
+    if(ids.filter(x=>x===s.id).length>=2){
+      return {mul:1, text:`${s.e}${s.e} 对子，回本`};
+    }
+  }
+  return {mul:0, text:null};
+}
+let slotsSpins = 0, slotsStreak=0;
+function slotsSpin(){
+  const bet = parseInt(document.getElementById("slotsBet").value);
+  if(!needChips(bet)) return;
+  S.chips -= bet;
+  const grid = [[],[],[]];
+  for(let r=0;r<3;r++) for(let c=0;c<3;c++) grid[r].push(weightedPick());
+  const reelsEl = document.getElementById("reels");
+  reelsEl.querySelectorAll("div").forEach((el,i)=>{
+    const r = Math.floor(i/3), c = i%3;
+    el.textContent = grid[r][c].e;
+  });
+  const midLine = grid[1];
+  const {mul, text} = evalLine(midLine);
+  const win = bet*mul;
+  let log = "";
+  slotsSpins++;
+  if(win>0) S.chips += win;
+  const net = win - bet;
+  addWin(net);
+  if(mul===0){ log = "灯闪了一下又暗了。没中。"; slotsStreak=0; }
+  else if(mul===1){ log = text; slotsStreak=0; }
+  else { log = `${text}  赢 ${win} 筹码！`; slotsStreak++; }
+  const achs = [];
+  if(slotsSpins===1) achs.push(unlockAch("slots_first","初来乍到"));
+  if(win>=100) achs.push(unlockAch("slots_win100","小有收获"));
+  if(mul>=200) achs.push(unlockAch("slots_jackpot","改变命运"));
+  if(slotsStreak>=3) achs.push(unlockAch("slots_hot","手感火热"));
+  achs.filter(Boolean).forEach(a=>log+="\n"+a);
+  document.getElementById("slotsLog").textContent = log;
+  saveState(); renderWallet(); renderAchs();
+}
+
+// ───────── 21点 ─────────
+const SUITS = ["♠","♥","♦","♣"];
+const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+function freshDeck(){
+  const d=[];
+  for(const r of RANKS) for(const s of SUITS) d.push(r+s);
+  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
+  return d;
+}
+function cardVal(c){
+  const r = c.slice(0,-1);
+  if(r==="A") return 11;
+  if(["J","Q","K"].includes(r)) return 10;
+  return parseInt(r);
+}
+function handVal(hand){
+  let total = hand.reduce((a,c)=>a+cardVal(c),0);
+  let aces = hand.filter(c=>c.startsWith("A")).length;
+  while(total>21 && aces>0){ total-=10; aces--; }
+  return total;
+}
+let bj = null;
+function bjRenderHands(hideDealer){
+  document.getElementById("bjPlayerCards").textContent = bj.player.join(" ");
+  document.getElementById("bjPlayerVal").textContent = "= "+handVal(bj.player);
+  if(hideDealer){
+    document.getElementById("bjDealerCards").textContent = bj.dealer[0]+" 🂠";
+    document.getElementById("bjDealerVal").textContent = "";
+  } else {
+    document.getElementById("bjDealerCards").textContent = bj.dealer.join(" ");
+    document.getElementById("bjDealerVal").textContent = "= "+handVal(bj.dealer);
+  }
+}
+function bjDeal(){
+  const bet = parseInt(document.getElementById("bjBet").value);
+  if(!needChips(bet)) return;
+  S.chips -= bet;
+  const deck = freshDeck();
+  bj = { deck, player:[deck.pop(),deck.pop()], dealer:[deck.pop(),deck.pop()], bet, doubled:false, done:false };
+  bjRenderHands(true);
+  document.getElementById("bjBetRow").style.display="none";
+  document.getElementById("bjActRow").style.display="flex";
+  document.getElementById("bjDoubleBtn").disabled = S.chips < bet;
+  saveState(); renderWallet();
+  const pv = handVal(bj.player);
+  if(pv===21){
+    document.getElementById("bjLog").textContent = "✨ Blackjack！停牌结算。";
+    bjStand();
+  } else {
+    document.getElementById("bjLog").textContent = "→ hit / stand / double / surrender";
+  }
+}
+function bjHit(){
+  if(!bj || bj.done) return;
+  bj.player.push(bj.deck.pop());
+  bjRenderHands(true);
+  const pv = handVal(bj.player);
+  if(pv>21){
+    document.getElementById("bjLog").textContent = `爆牌！${pv} > 21。`;
+    bjSettle("bust");
+  } else if(pv===21){
+    bjStand();
+  }
+}
+function bjDouble(){
+  if(!bj || bj.done) return;
+  if(S.chips < bj.bet){ alert("筹码不够加倍。"); return; }
+  S.chips -= bj.bet;
+  bj.bet *= 2; bj.doubled = true;
+  saveState(); renderWallet();
+  bj.player.push(bj.deck.pop());
+  bjRenderHands(true);
+  const pv = handVal(bj.player);
+  if(pv>21){ document.getElementById("bjLog").textContent = `加倍后爆牌！${pv}。`; bjSettle("bust"); }
+  else bjStand();
+}
+function bjSurrender(){
+  if(!bj || bj.done) return;
+  S.chips += Math.floor(bj.bet/2);
+  bj.done = true;
+  document.getElementById("bjLog").textContent = "投降，退回一半赌注。";
+  saveState(); renderWallet();
+  bjEndUI();
+}
+function bjStand(){
+  if(!bj || bj.done) return;
+  while(handVal(bj.dealer)<17) bj.dealer.push(bj.deck.pop());
+  bjRenderHands(false);
+  const pv = handVal(bj.player), dv = handVal(bj.dealer);
+  const pBJ = pv===21 && bj.player.length===2;
+  const dBJ = dv===21 && bj.dealer.length===2;
+  let result, win=0;
+  if(pBJ && !dBJ){ win = Math.floor(bj.bet*1.5); result=`Blackjack！赢 ${win}`; }
+  else if(dv>21){ win = bj.bet; result=`庄家爆牌（${dv}），赢 ${win}`; }
+  else if(pv>dv){ win = bj.bet; result=`你赢！${pv} > ${dv}，+${win}`; }
+  else if(pv===dv){ win=0; result=`平局 ${pv}。筹码退回。`; S.chips += bj.bet; }
+  else { win = -bj.bet; result=`庄家赢。${dv} > ${pv}`; }
+  if(win>0) S.chips += bj.bet + win;
+  document.getElementById("bjLog").textContent = result;
+  addWin(win);
+  bjSettle(win>0?"win":(win<0?"lose":"push"));
+}
+function bjSettle(kind){
+  bj.done = true;
+  const achs = [];
+  if(kind==="win") achs.push(unlockAch("bj_win1","小赌怡情"));
+  achs.filter(Boolean).forEach(a=>{
+    document.getElementById("bjLog").textContent += "\n"+a;
+  });
+  saveState(); renderWallet(); renderAchs();
+  bjEndUI();
+}
+function bjEndUI(){
+  document.getElementById("bjActRow").style.display="none";
+  document.getElementById("bjBetRow").style.display="flex";
+}
+
+// ───────── 轮盘 ─────────
+const REDS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+function numColor(n){ if(n===0) return "green"; return REDS.has(n) ? "red" : "black"; }
+const BETS = {
+  red:   {test:n=>numColor(n)==="red",   pay:1, label:"红"},
+  black: {test:n=>numColor(n)==="black", pay:1, label:"黑"},
+  odd:   {test:n=>n!==0 && n%2===1,      pay:1, label:"奇"},
+  even:  {test:n=>n!==0 && n%2===0,      pay:1, label:"偶"},
+  low:   {test:n=>n>=1 && n<=18,         pay:1, label:"小1-18"},
+  high:  {test:n=>n>=19 && n<=36,        pay:1, label:"大19-36"},
+  d1:    {test:n=>n>=1 && n<=12,         pay:2, label:"第一打"},
+  d2:    {test:n=>n>=13 && n<=24,        pay:2, label:"第二打"},
+  d3:    {test:n=>n>=25 && n<=36,        pay:2, label:"第三打"},
+};
+let rlSpins = 0;
+function rlSpin(betType){
+  const bet = parseInt(document.getElementById("rlBet").value);
+  if(!needChips(bet)) return;
+  let label, payout, test;
+  if(betType==="straight"){
+    const num = parseInt(document.getElementById("rlNum").value);
+    if(isNaN(num) || num<0 || num>36){ alert("单号押注要填 0-36 的数字。"); return; }
+    label = `单号 ${num}`; payout = 35; test = n=>n===num;
+  } else {
+    const b = BETS[betType];
+    label = b.label; payout = b.pay; test = b.test;
+  }
+  S.chips -= bet;
+  const result = Math.floor(Math.random()*37);
+  const color = numColor(result);
+  const emoji = color==="red" ? "🔴" : color==="black" ? "⚫" : "🟢";
+  rlSpins++;
+  let log = `${emoji} 球停在 ${result}（${color==="red"?"红":color==="black"?"黑":"绿"}）\n你押了 ${label} ×${payout}\n`;
+  let win = 0;
+  if(test(result)){
+    win = bet*payout;
+    S.chips += bet + win;
+    log += `✅ 中了！+${win} 筹码`;
+  } else {
+    win = -bet;
+    log += `❌ 没中，-${bet} 筹码`;
+  }
+  addWin(win);
+  const achs=[];
+  if(rlSpins===1) achs.push(unlockAch("rl_first","初次下注"));
+  if(win>0) achs.push(unlockAch("rl_win1","新手好运"));
+  if(betType==="straight" && win>0) achs.push(unlockAch("rl_straight","一击命中"));
+  achs.filter(Boolean).forEach(a=>log+="\n"+a);
+  document.getElementById("rlResult").textContent = `${emoji} ${result}`;
+  document.getElementById("rlLog").textContent = log;
+  saveState(); renderWallet(); renderAchs();
+}
+
+renderWallet();
+renderAchs();
+</script>
+</body>
+</html>
